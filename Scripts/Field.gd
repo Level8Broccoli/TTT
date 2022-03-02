@@ -10,8 +10,7 @@ func _ready() -> void:
 	hover_sprite.hide()
 
 func _on_Field_mouse_entered() -> void:
-	var t = x_o_sprite.get_texture()
-	if t == null:
+	if not is_set():
 		hover_sprite.show()
 
 func _on_Field_mouse_exited() -> void:
@@ -31,3 +30,7 @@ func reset_field() -> void:
 
 func mark_as_won() -> void:
 	winner_rect.show()
+
+func is_set() -> bool:
+	var t = x_o_sprite.get_texture()
+	return t != null

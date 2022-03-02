@@ -81,7 +81,7 @@ func reset_data_store() -> void:
 		data[i] = State.EMPTY
 
 func clicked_on(field_no: int, event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and winner == State.EMPTY:
+	if event is InputEventMouseButton and event.pressed and winner == State.EMPTY and data[field_no] == State.EMPTY:
 		if current_player == State.X:
 			data[field_no] = State.X
 			current_player = State.O
