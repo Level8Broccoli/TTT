@@ -2,6 +2,9 @@ extends Node2D
 
 enum State {EMPTY, O, X}
 
+const websocket_url = "ws://ttt-echo.herokuapp.com/echo/websocket"
+var _client = WebSocketClient.new()
+
 onready var checker := [
 	[0,1,2], [3,4,5], [6,7,8],
 	[0,3,6], [1,4,7], [2,5,8],
@@ -27,13 +30,15 @@ var winner = State.EMPTY
 var winning_fields = []
 
 func _process(_delta: float) -> void:
+	_client.poll()
 	if Input.is_key_pressed(KEY_ENTER):
 		reset_data_store()
-		update_ui()
+		_client.get_peer(1).put_packet("reset".to_utf8()) 
 
 func _ready() -> void:
 	reset_data_store()
 	update_ui()
+	connect_ws()
 
 func check_winner() -> void:
 	for line in checker:
@@ -79,17 +84,11 @@ func reset_data_store() -> void:
 	winning_fields = []
 	for i in range(len(fields)):
 		data[i] = State.EMPTY
+	update_ui()
 
 func clicked_on(field_no: int, event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and winner == State.EMPTY and data[field_no] == State.EMPTY:
-		if current_player == State.X:
-			data[field_no] = State.X
-			current_player = State.O
-		else: 
-			data[field_no] = State.O
-			current_player = State.X
-		check_winner()
-		update_ui()
+	if event is InputEventMouseButton and event.pressed:
+		_client.get_peer(1).put_packet(("TTT.State:" + String(data) + "||TTT.Click:" + String(field_no) + "||TTT.Player:" + String(current_player)).to_utf8()) 
 
 func _on_0_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
 	clicked_on(0, event)
@@ -117,3 +116,71 @@ func _on_7_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> v
 
 func _on_8_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
 	clicked_on(8, event)
+
+
+func connect_ws() -> void:
+	# Connect base signals to get notified of connection open, close, and errors.
+	_client.connect("connection_closed", self, "_closed")
+	_client.connect("connection_error", self, "_closed")
+	_client.connect("connection_established", self, "_connected")
+	# This signal is emitted when not using the Multiplayer API every time
+	# a full packet is received.
+	# Alternatively, you could check get_peer(1).get_available_packets() in a loop.
+	_client.connect("data_received", self, "_on_data")
+
+	# Initiate connection to the given URL.
+	var err = _client.connect_to_url(websocket_url)
+	if err != OK:
+		print("Unable to connect")
+		set_process(false)
+
+func _closed(was_clean = false):
+	# was_clean will tell you if the disconnection was correctly notified
+	# by the remote peer before closing the socket.
+	print("Closed, clean: ", was_clean)
+	set_process(false)
+
+func _connected(proto = ""):
+	# This is called on connection, "proto" will be the selected WebSocket
+	# sub-protocol (which is optional)
+	print("Connected with protocol: ", proto)
+	# You MUST always use get_peer(1).put_packet to send data to server,
+	# and not put_packet directly when not using the MultiplayerAPI.
+	_client.get_peer(1).put_packet("Test packet".to_utf8())
+
+func _on_data():
+	# Print the received packet, you MUST always use get_peer(1).get_packet
+	# to receive data from server, and not get_packet directly when not
+	# using the MultiplayerAPI.
+	var res = _client.get_peer(1).get_packet().get_string_from_utf8()
+	print("Got data from server: ", res)
+	if res == "reset":
+		reset_data_store()
+
+	var regex = RegEx.new()
+	regex.compile("[^|]+")
+	var results = []
+	for result in regex.search_all(res):
+		results.push_back(result.get_string())
+	if len(results) == 3:
+		var regex2 = RegEx.new()
+		regex2.compile("[^:]+")
+		var new_state = regex2.search_all(results[0])[1].get_string()
+		var res_click = regex2.search_all(results[1])[1].get_string()
+		var res_player = regex2.search_all(results[2])[1].get_string()
+		current_player = int(res_player)
+		var regex3 = RegEx.new()
+		regex3.compile("\\d")
+		var found_states = regex3.search_all(new_state)
+		for i in len(found_states):
+			data[i] = int(found_states[i].get_string())
+		if winner == State.EMPTY and data[int(res_click)] == State.EMPTY:
+			if current_player == State.X:
+				data[int(res_click)] = State.X
+				current_player = State.O
+			else: 
+				data[int(res_click)] = State.O
+				current_player = State.X
+			check_winner()
+			update_ui()
+
